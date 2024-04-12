@@ -51,8 +51,7 @@ class BaseConceptualModel(nn.Module):
         return dynamic_parameters
 
     def _initialize_information(self, conceptual_inputs: torch.Tensor) -> Tuple[Dict[str, torch.Tensor], torch.Tensor]:
-        """Initialize the structures to store the time evolution of the internal states and the outflow of the conceptual
-        model
+        """Initialize the structures to store the time evolution of the internal states and the outflow of the conceptual model
 
         Parameters
         ----------
