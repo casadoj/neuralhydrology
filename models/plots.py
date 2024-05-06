@@ -4,10 +4,12 @@ import matplotlib.gridspec as gridspec
 import cartopy.crs as ccrs
 import cartopy.feature as cf
 from matplotlib.cm import ScalarMappable
-from typing import Dict, List, Tuple, Union
+import matplotlib.gridspec as gridspec
+from typing import Dict, List, Tuple, Union, Optional
 import geopandas as gpd
 import pandas as pd
 from pathlib import Path
+from metrics import KGE
 
 
 
@@ -119,3 +121,92 @@ def rendimiento_LSTM(cuencas: gpd.GeoDataFrame, ecdf: Dict[str, pd.Series], metr
 
     if save is not None:
         plt.savefig(save, dpi=300, bbox_inches='tight');
+        
+        
+        
+def plot_timeseries(df: pd.DataFrame, storage: str, inflow: str, outflow: Optional[str] = None, save: Optional[Union[str, Path]] = None, **kwargs):
+    """It creates a plot to analyse the input reservoir time series: storage, inflow and outflow. A line plot shows the temporal evolution of the three variables, and a scatter plot compares the relationship between inflow and outflow
+    
+    Parameters:
+    -----------
+    df: pandas.DataFrame
+        The table containing the time series
+    storage: str
+        A column in "df" containing the reservoir storage time series
+    inflow: str
+        A column in "df" containing the reservoir inflow time series
+    outflow: optional or str
+        A column in "df" containing the reservoir inflow time series
+    save: optional, string or pathlib.Path
+        If provided, the figure will be saved in this file
+        
+    Keyword arguments:
+    ------------------
+    alpha: float
+        transparency in the scatter plot
+    figsize: tuple
+        the size of the figure
+    lw: float
+        line widht in the line plot
+    title: string
+    s: float
+        size of the markers in the scatter plot
+    ylim: tuple
+        limits of the Y axis
+    ylabel: string
+        label of the Y axis
+    """
+    
+    alpha = kwargs.get('alpha', .5)
+    figsize = kwargs.get('figsize', (16, 4))
+    lw = kwargs.get('lw', .8)
+    title = kwargs.get('title', None)
+    s = kwargs.get('size', 15)
+    ylim = kwargs.get('ylim', (-.05, None))
+    ylabel= kwargs.get('ylabel', None)
+    colors = ['dimgray', 'steelblue', 'indianred']
+    cols = {'storage': storage, 'inflow': inflow, 'outflow': outflow}
+    if outflow is None:
+        del cols['outflow']
+        
+
+    fig = plt.figure(figsize=figsize)
+    gs = gridspec.GridSpec(1, 2, width_ratios=[3, 1])
+    
+    # LINE PLOT
+    
+    ax1 = plt.subplot(gs[:, 0])
+    for (label, col), c in zip(cols.items(), colors):
+        ax1.plot(df.index, df[col], lw=lw, c=c, label=label)
+
+    ax1.set(xlim=(df.index.min(), df.index.max()),
+           ylim=ylim,
+           ylabel=ylabel,
+           title=title)
+    ax1.legend(ncols=1, frameon=False);
+    
+    # SCATTER PLOT
+    
+    if outflow is not None:
+        ax2 = plt.subplot(gs[:, -1])
+
+        sct = ax2.scatter(df.inflow_efas5, df.outflow, c=df.volume, marker='.', s=s, alpha=alpha, cmap='coolwarm_r')
+        cax = fig.add_axes([0.92, 0.2, 0.01, 0.6])  # Define the position of the new axes
+        fig.colorbar(sct, cax=cax, label='storage (-)')
+
+        # performance
+        kge, alpha, beta, r = KGE(df.inflow_efas5, df.outflow)
+        ax2.text(.975, .99, f'KGE = {kge:.3}', va='top', ha='right', transform=ax2.transAxes)
+        ax2.text(.975, .94, f'α = {alpha:.3}', va='top', ha='right', transform=ax2.transAxes)
+        ax2.text(.975, .89, f'β = {beta:.3}', va='top', ha='right', transform=ax2.transAxes)
+        ax2.text(.975, .84, f'ρ = {r:.3}', va='top', ha='right', transform=ax2.transAxes)
+
+        # settings
+        ax2.set(xlabel='inflow',
+               xlim=ax1.get_ylim(),
+               ylabel='outflow',
+               ylim=ax1.get_ylim())
+
+    if save is not None:
+        plt.savefig(save, dpi=300, bbox_inches='tight')
+        plt.close(fig)
