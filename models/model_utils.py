@@ -143,7 +143,7 @@ def split_periods(serie: pd.Series, cal: float = .6, val: float = .2) -> xr.Data
             if test > 0:
                 start_cal = end_test + pd.Timedelta(days=1)
             else:
-                start_cal = start        
+                start_cal = start
         end_cal = end
     else:
         start_cal, end_cal = np.datetime64('NaT', 'ns'), np.datetime64('NaT', 'ns')
