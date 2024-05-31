@@ -69,6 +69,8 @@ def get_loss_obj(cfg: Config) -> loss.BaseLoss:
         loss_obj = loss.MaskedCMALLoss(cfg)
     elif cfg.loss.lower() == "umalloss":
         loss_obj = loss.MaskedUMALLoss(cfg)
+    elif cfg.loss.lower() == "kge":
+        loss_obj = loss.MaskedKGELoss(cfg)
     else:
         raise NotImplementedError(f"{cfg.loss} not implemented or not linked in `get_loss()`")
 
