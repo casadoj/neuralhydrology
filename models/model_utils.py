@@ -1,4 +1,4 @@
-from typing import List, Dict, Union, Optional
+from typing import List, Dict, Union, Optional, Literal
 from pathlib import Path
 import numpy as np
 import pandas as pd
@@ -6,6 +6,8 @@ import xarray as xr
 import random
 import matplotlib.pyplot as plt
 # import pickle
+
+from neuralhydrology.evaluation import metrics
 
 
 
@@ -35,7 +37,7 @@ def split_samples(ids: List[Union[str, int]], cal: float = .7, val: float = .3, 
     random.seed(seed)
     
     assert 0 < cal <= 1, '"cal" debe de ser un valor entre 0 y 1.'
-    assert 0 < val <= 1, '"val" debe de ser un valor entre 0 y 1.'
+    assert 0 <= val <= 1, '"val" debe de ser un valor entre 0 y 1.'
 
     if path is not None:
         # export the complete sample
@@ -60,17 +62,24 @@ def split_samples(ids: List[Union[str, int]], cal: float = .7, val: float = .3, 
         
     # select the validation subsample
     n_val = int(n_stns * val)
-    ids_val = random.sample(ids, n_val)
-    ids_val.sort()
-    
+    if n_val > 0:
+        ids_val = random.sample(ids, n_val)
+        ids_val.sort()
+        ids = [id for id in ids if id not in ids_val]
+    else:
+        val = None
+        ids_val = []
+
     # select the training subsample
-    ids_cal = [id for id in ids if id not in ids_val]
+    ids_cal = ids
     ids_cal.sort()
     
     assert (len(ids_cal) + len(ids_val) + len(ids_test)) == n_stns, 'The union of training, validation and testing subsamples is smaller than the original sample "ids"'
 
     # reorganize as dictionary
-    samples = {'train': ids_cal, 'validation': ids_val}
+    samples = {'train': ids_cal}
+    if val is not None:
+        samples.update({'validation': ids_val})
     if test is not None:
         samples.update({'test': ids_test})
             
@@ -158,49 +167,143 @@ def split_periods(serie: pd.Series, cal: float = .6, val: float = .2) -> xr.Data
 
 
 
-def plot_results(results: Dict, period: str, target: str, save: Union[str, Path] = None, **kwargs):
+# def plot_results(results: Dict, period: str, target: str, save: Union[str, Path] = None, **kwargs):
+#     """
+#     """
+    
+#     figsize = kwargs.get('figsize', (16, 4))
+#     ylim = kwargs.get('ylim', (-1, None))
+#     ylabel = kwargs.get('ylabel', None)
+    
+#     for id, dct in results.items():
+
+#         fig, ax = plt.subplots(figsize=figsize)#, sharex=True, sharey=True)
+
+#         # extraer series
+#         qobs = dct['1D']['xr'][f'{target}_obs'].isel(time_step=0).to_pandas()
+#         qsim = dct['1D']['xr'][f'{target}_sim'].isel(time_step=0).to_pandas()
+        
+#         # plot series
+#         qobs.plot(c='darkgray', lw=1, label='obs', ax=ax)
+#         qsim.plot(c='steelblue', lw=1.2, label='sim', ax=ax)
+
+#         # config
+#         ax.set(xlabel='', ylabel=ylabel, ylim=ylim)
+#         ax.set_title(f'{id} - {period}')
+#         ax.text(0.01, 0.925, 'KGE = {0:.3f}'.format(dct['1D']['KGE']), transform=ax.transAxes, fontsize=11)
+#         ax.legend(loc=0, frameon=False);
+
+#         if save is not None:
+#             plt.savefig(f'{save}/{id:04}.jpg', dpi=300, bbox_inches='tight')
+            
+            
+            
+def plot_timeseries(results: Dict, target: str, save: Optional[Union[str, Path]] = None, **kwargs):
     """
+    Plot the observed and simulated time series data from a dictionary of results.
+
+    Parameters
+    ----------
+    results : Dict
+        A dictionary containing the time series data to plot. The dictionary should be organized with
+        periods as keys and another dictionary as values, which then contain IDs as keys and time series
+        data as values.
+    target : str
+        The target variable name that will be used to extract observed and simulated data from the time
+        series data. The expected keys in the time series data are formatted as '{target}_obs' and
+        '{target}_sim'.
+    save : Union[str, Path], optional
+        The directory path where the plots should be saved. If not specified, plots will not be saved.
+        Default is None.
+    **kwargs
+        Arbitrary keyword arguments. Currently supported are:
+        - figsize: tuple of int or float, optional
+            The figure size of each plot. Default is (16, 4).
+        - ylim: tuple of int, float or None, optional
+            The y-axis limits for the plots. Default is (-1, None).
+        - ylabel: str or None, optional
+            The label for the y-axis. Default is None.
     """
     
     figsize = kwargs.get('figsize', (16, 4))
-    ylim = kwargs.get('ylim', (-1, None))
-    ylabel = kwargs.get('ylabel', None)
+    ylim = kwargs.get('ylim', (-.05, None))
+    # ylabel = kwargs.get('ylabel', None)
     
-    for id, dct in results.items():
-
-        fig, ax = plt.subplots(figsize=figsize)#, sharex=True, sharey=True)
-
-        # extraer series
-        qobs = dct['1D']['xr'][f'{target}_obs'].isel(time_step=0).to_pandas()
-        qsim = dct['1D']['xr'][f'{target}_sim'].isel(time_step=0).to_pandas()
+    for period, dct in results.items():
         
-        # plot series
-        qobs.plot(c='darkgray', lw=1, label='obs', ax=ax)
-        qsim.plot(c='steelblue', lw=1.2, label='sim', ax=ax)
-
-        # config
-        ax.set(xlabel='', ylabel=ylabel, ylim=ylim)
-        ax.set_title(f'{id} - {period}')
-        ax.text(0.01, 0.925, 'KGE = {0:.3f}'.format(dct['1D']['KGE']), transform=ax.transAxes, fontsize=11)
-        ax.legend(loc=0, frameon=False);
-
         if save is not None:
-            plt.savefig(f'{save}/{id:04}.jpg', dpi=300, bbox_inches='tight')
+            path = save / 'plots' / period
+            path.mkdir(parents=True, exist_ok=True)
+    
+        for ID, ts in dct.items():
+
+            fig, ax = plt.subplots(figsize=figsize)#, sharex=True, sharey=True)
+
+            # extraer series
+            obs = ts[f'{target}_obs'].isel(time_step=0).to_pandas()
+            sim = ts[f'{target}_sim'].isel(time_step=0).to_pandas()
+
+            # plot series
+            obs.plot(c='darkgray', lw=1, label='obs', ax=ax)
+            sim.plot(c='steelblue', lw=1.2, label='sim', ax=ax)
+
+            # config
+            ax.set(xlabel='',
+                   ylabel=target,
+                   ylim=ylim)
+            ax.set_title(f'{ID} - {period}')
+            ax.text(0.01, 0.925, 'NSE = {0:.3f}'.format(metrics.nse(obs, sim)), transform=ax.transAxes, fontsize=11)
+            ax.legend(loc=0, frameon=False);
+
+            if save is not None:
+                plt.savefig(path / f'{ID:04}.jpg', dpi=300, bbox_inches='tight')
+                
+    plt.close()
         
         
         
-def get_results(run_dir: Path, period: str, epoch: int) -> (dict, pd.DataFrame):
-    """Extrae 
+def get_results(run_dir: Union[str, Path],
+                 sample: Literal['train', 'validation', 'test'],
+                 epoch: int,
+                 freq: str = '1D'
+               ) -> (dict, pd.DataFrame):
+    """Reads the results for a given subsample and epoch
+    
+    Parameters:
+    -----------
+    run_dir: string or pathlib.Path
+        directory of the run to be analysed. It is defined in the `neuralhydrology` configuration file, otherwise it takes the default value './runs'
+    sample: string
+        the subsample to be analysed. Either 'train', 'validation' or 'test'
+    epoch: integer
+        the training epoch for which results will be read
+    freq: string
+        temporal resolution of the time series
+        
+    Returns:
+    --------
+    results: dictionary
+        it contains for each basin in the sample an xarray.Dataset with simulated and observed target variables and the performance metrics
+    metrics: pd.DataFrame
+        a table with the performance for each basin in the sample
     """
     
-    path = run_dir / period / f'model_epoch{epoch:03}'
+    if isinstance(run_dir, str):
+        run_dir = Path(run_dir)
+    path = run_dir / sample / f'model_epoch{epoch:03}'
     
     # time series
-    # with open(path / f'{period}_results.p', 'rb') as fp:
-    #     results = pickle.load(fp)
-    results = pd.read_pickle(path / f'{period}_results.p')
+    results = pd.read_pickle(path / f'{sample}_results.p')
         
-    # metrics
-    metrics = pd.read_csv(path / f'{period}_metrics.csv', index_col='basin')
+    # list basin IDs
+    IDs = [int(ID) for ID in results.keys()]
+    IDs.sort()
+
+    # extract time series
+    timeseries = {ID: results[str(ID)][freq].pop('xr', None) for ID in IDs}
+
+    # extract performance
+    performance = {ID: results[str(ID)][freq] for ID in IDs}
+    performance = pd.DataFrame.from_dict(performance).transpose()
     
-    return results, metrics
+    return timeseries, performance
