@@ -262,6 +262,56 @@ class MaskedNSELoss(BaseLoss):
         return {key: value[:, :, n_target:n_target + 1] for key, value in additional_data.items()}
 
 
+class MaskedKGELoss(BaseLoss):
+    """Basin-averaged Kling-Gupta Efficiency Coefficient loss.
+
+    To use this loss in a forward pass, the passed `prediction` dict must contain
+    the key ``y_hat``, and the `data` dict must contain ``y`` and ``per_basin_target_stds``.
+
+    A description of the loss function is available in [#]_.
+
+    Parameters
+    ----------
+    cfg : Config
+        The run configuration.
+    eps: float, optional
+        Small constant for numeric stability.
+
+    References
+    ----------
+    
+    """
+        
+    def __init__(self, cfg: Config, eps: float = 0.1):
+        super(MaskedKGELoss, self).__init__(cfg,
+                                            prediction_keys=['y_hat'],
+                                            ground_truth_keys=['y'])
+        self.eps = eps
+
+    def _get_loss(self, prediction: Dict[str, torch.Tensor], ground_truth: Dict[str, torch.Tensor], **kwargs):
+        mask = ~torch.isnan(ground_truth['y'])
+        y_hat = prediction['y_hat'][mask]
+        y = ground_truth['y'][mask]
+
+        # Calculate the components of the KGE metric
+        # Compute means
+        mu_x = torch.mean(y_hat) + self.eps
+        mu_y = torch.mean(y) + self.eps
+
+        # add small epsilon for numerical stability
+        sigma_x = torch.std(y_hat) + self.eps
+        sigma_y = torch.std(y) + self.eps
+
+        r = torch.corrcoef(torch.stack((y_hat, y), 0))[0, 1]
+        alpha = sigma_x / sigma_y
+        beta = mu_x / mu_y
+
+        # Calculate KGE (subtract from 1 to make it a loss, since 1 - KGE is to be minimized)
+        # kge = 1 - torch.sqrt((r - 1)**2  - (alpha-1)**2  - (beta - 1)**2)
+        kge_loss = torch.sqrt((r - 1)**2  + (alpha - 1)**2  + (beta - 1)**2)
+
+        return kge_loss
+
 class MaskedGMMLoss(BaseLoss):
     """Average negative log-likelihood for a gaussian mixture model (GMM). 
 
