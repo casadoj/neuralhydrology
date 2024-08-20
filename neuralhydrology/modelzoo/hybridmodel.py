@@ -6,13 +6,13 @@ from neuralhydrology.modelzoo.basemodel import BaseModel
 from neuralhydrology.modelzoo.baseconceptualmodel import BaseConceptualModel
 from neuralhydrology.modelzoo.inputlayer import InputLayer
 from neuralhydrology.modelzoo.shm import SHM
+from neuralhydrology.modelzoo.linear_reservoir import LinearReservoir
 
 
 class HybridModel(BaseModel):
     """Wrapper to combine a deep learning model with a conceptual hydrological models. 
     
-    In the current implementation, the deep learning model is always an LSTM. The conceptual model is configurable using the config
-    argument `conceptual_model`. Currently supported is `['SHM']`.
+    In the current implementation, the deep learning model is always an LSTM. The conceptual model is configurable using the config argument `conceptual_model`. Currently supported is `['SHM']`.
     
     Parameters
     ----------
@@ -82,6 +82,8 @@ class HybridModel(BaseModel):
         """
         if cfg.conceptual_model.lower() == "shm":
             conceptual_model = SHM(cfg=cfg)
+        elif cfc.conceptual_model.lower() == 'linear_reservoir':
+            conceptual_model = LinearReservoir(cfg=cfg)
         else:
             raise NotImplementedError(f"{cfg.conceptual_model} not implemented or not linked in `_get_conceptual_model()`")
 
