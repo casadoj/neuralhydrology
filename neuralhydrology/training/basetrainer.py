@@ -79,27 +79,27 @@ class BaseTrainer(object):
     def _get_dataset(self) -> BaseDataset:
         return get_dataset(cfg=self.cfg, period="train", is_train=True, scaler=self._scaler)
 
-    def _get_model(self) -> torch.nn.Module:
-        return get_model(cfg=self.cfg)
-
-    def _get_optimizer(self) -> torch.optim.Optimizer:
-        return get_optimizer(model=self.model, cfg=self.cfg)
-
-    def _get_loss_obj(self) -> loss.BaseLoss:
-        return get_loss_obj(cfg=self.cfg)
-
-    def _set_regularization(self):
-        self.loss_obj.set_regularization_terms(get_regularization_obj(cfg=self.cfg))
-
-    def _get_tester(self) -> BaseTester:
-        return get_tester(cfg=self.cfg, run_dir=self.cfg.run_dir, period="validation", init_model=False)
-
     def _get_data_loader(self, ds: BaseDataset) -> torch.utils.data.DataLoader:
         return DataLoader(ds,
                           batch_size=self.cfg.batch_size,
                           shuffle=True,
                           num_workers=self.cfg.num_workers,
                           collate_fn=ds.collate_fn)
+    
+    def _get_loss_obj(self) -> loss.BaseLoss:
+        return get_loss_obj(cfg=self.cfg)
+
+    def _get_model(self) -> torch.nn.Module:
+        return get_model(cfg=self.cfg)
+
+    def _get_optimizer(self) -> torch.optim.Optimizer:
+        return get_optimizer(model=self.model, cfg=self.cfg)
+
+    def _set_regularization(self):
+        self.loss_obj.set_regularization_terms(get_regularization_obj(cfg=self.cfg))
+
+    def _get_tester(self) -> BaseTester:
+        return get_tester(cfg=self.cfg, run_dir=self.cfg.run_dir, period="validation", init_model=False)
 
     def _freeze_model_parts(self):
         # freeze all model weights
@@ -148,7 +148,8 @@ class BaseTrainer(object):
         if len(ds) == 0:
             raise ValueError("Dataset contains no samples.")
         self.loader = self._get_data_loader(ds=ds)
-
+        
+        # initialize model
         self.model = self._get_model().to(self.device)
         if self.cfg.checkpoint_path is not None:
             LOGGER.info(f"Starting training from Checkpoint {self.cfg.checkpoint_path}")
@@ -162,7 +163,8 @@ class BaseTrainer(object):
         # Freeze model parts from pre-trained model.
         if self.cfg.is_finetuning:
             self._freeze_model_parts()
-
+        
+        # initialize optimizer
         self.optimizer = self._get_optimizer()
         self.loss_obj = self._get_loss_obj().to(self.device)
 
@@ -210,7 +212,8 @@ class BaseTrainer(object):
                 LOGGER.info(f"Setting learning rate to {self.cfg.learning_rate[epoch]}")
                 for param_group in self.optimizer.param_groups:
                     param_group["lr"] = self.cfg.learning_rate[epoch]
-
+            
+            # run a training epoch
             self._train_epoch(epoch=epoch)
             avg_losses = self.experiment_logger.summarise()
             loss_str = ", ".join(f"{k}: {v:.5f}" for k, v in avg_losses.items())
@@ -218,7 +221,8 @@ class BaseTrainer(object):
 
             if epoch % self.cfg.save_weights_every == 0:
                 self._save_weights_and_optimizer(epoch)
-
+            
+            # validate
             if (self.validator is not None) and (epoch % self.cfg.validate_every == 0):
                 self.validator.evaluate(epoch=epoch,
                                         save_results=self.cfg.save_validation_results,
@@ -271,6 +275,7 @@ class BaseTrainer(object):
         torch.save(self.optimizer.state_dict(), str(optimizer_path))
 
     def _train_epoch(self, epoch: int):
+        """Run one training epoch"""
         self.model.train()
         self.experiment_logger.train()
 
