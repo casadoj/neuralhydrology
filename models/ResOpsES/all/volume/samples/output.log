@@ -1,0 +1,14 @@
+2024-05-16 15:35:33,986: Logging to /home/casadje/neuralhydrology/models/ResOpsES/all/volume/samples/output.log initialized.
+2024-05-16 15:35:33,986: Uncaught exception
+Traceback (most recent call last):
+  File "/home/casadje/neuralhydrology/neuralhydrology/nh_run.py", line 173, in <module>
+    _main()
+  File "/home/casadje/neuralhydrology/neuralhydrology/nh_run.py", line 51, in _main
+    eval_run(run_dir=Path(args["run_dir"]), period=args["period"], epoch=args["epoch"], gpu=args["gpu"])
+  File "/home/casadje/neuralhydrology/neuralhydrology/nh_run.py", line 161, in eval_run
+    config = Config(run_dir / "config.yml")
+  File "/home/casadje/neuralhydrology/neuralhydrology/utils/config.py", line 45, in __init__
+    self._cfg = Config._read_and_parse_config(yml_path=yml_path_or_dict)
+  File "/home/casadje/neuralhydrology/neuralhydrology/utils/config.py", line 257, in _read_and_parse_config
+    raise FileNotFoundError(yml_path)
+FileNotFoundError: /home/casadje/neuralhydrology/models/ResOpsES/all/volume/samples/config.yml

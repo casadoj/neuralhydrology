@@ -13,7 +13,7 @@ from metrics import KGE
 
 
 
-def crear_cmap(cmap: str, bounds: List[float], name: str = '', specify_color: Tuple = None):
+def create_cmap(cmap: str, bounds: List[float], name: str = '', specify_color: Tuple = None):
     """Given the name of a colour map and the boundaries, it creates a discrete colour ramp for future plots
     
     Inputs:
