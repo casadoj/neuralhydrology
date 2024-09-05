@@ -7,25 +7,26 @@ from neuralhydrology.utils.config import Config
 class BaseConceptualModel(nn.Module):
     """Abstract base model class, don't use this class for model training.
 
-    The purpose is to have some common operations that all conceptual models will need. Use subclasses of this class
-    for training/evaluating different conceptual models, e.g. 'SHM'.
+    The purpose is to have some common operations that all conceptual models will need. Use subclasses of this class for training/evaluating different conceptual models, e.g. 'SHM'.
 
     Parameters
     ----------
     cfg : Config
         The run configuration.
-
     """
 
     def __init__(self, cfg: Config):
         super(BaseConceptualModel, self).__init__()
         self.cfg = cfg
-        # Check if the dynamic_conceptual_inputs and the target_variables are in the custom normalization. This is
-        # necessary as conceptual models are mass conservative.
+        # Check if the dynamic_conceptual_inputs and the target_variables are in the custom normalization. This is necessary as conceptual models are mass conservative.
         if any(item not in cfg.custom_normalization for item in cfg.dynamic_conceptual_inputs + cfg.target_variables):
             raise RuntimeError("dynamic_conceptual_inputs and target_variables require custom_normalization")
 
-    def forward(self, x_conceptual: torch.Tensor, lstm_out: torch.Tensor) -> Dict[str, Union[torch.Tensor, Dict[str, torch.Tensor]]]:
+    def forward(
+        self,
+        x_conceptual: torch.Tensor,
+        lstm_out: torch.Tensor
+    ) -> Dict[str, Union[torch.Tensor, Dict[str, torch.Tensor]]]:
         raise NotImplementedError
 
     def _get_dynamic_parameters_conceptual(self, lstm_out: torch.Tensor) -> Dict[str, torch.Tensor]:
@@ -50,7 +51,10 @@ class BaseConceptualModel(nn.Module):
 
         return dynamic_parameters
 
-    def _initialize_information(self, conceptual_inputs: torch.Tensor) -> Tuple[Dict[str, torch.Tensor], torch.Tensor]:
+    def _initialize_information(
+        self,
+        conceptual_inputs: torch.Tensor
+    ) -> Tuple[Dict[str, torch.Tensor], torch.Tensor]:
         """Initialize the structures to store the time evolution of the internal states and the outflow of the conceptual model
 
         Parameters
@@ -70,12 +74,14 @@ class BaseConceptualModel(nn.Module):
         states = {}
         # initialize dictionary to store the evolution of the states
         for name, value in self.initial_states.items():
-            states[name] = torch.zeros((conceptual_inputs.shape[0], conceptual_inputs.shape[1]), dtype=torch.float32,
+            states[name] = torch.zeros((conceptual_inputs.shape[0], conceptual_inputs.shape[1]),
+                                       dtype=torch.float32,
                                        device=conceptual_inputs.device)
 
         # initialize vectors to store the evolution of the outputs
         out = torch.zeros((conceptual_inputs.shape[0], conceptual_inputs.shape[1], len(self.cfg.target_variables)),
-                          dtype=torch.float32, device=conceptual_inputs.device)
+                          dtype=torch.float32,
+                          device=conceptual_inputs.device)
 
         return states, out
 
