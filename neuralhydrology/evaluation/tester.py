@@ -199,7 +199,8 @@ class BaseTester(object):
         pbar.set_description('# Validation' if self.period == "validation" else "# Evaluation")
 
         for basin in pbar:
-
+            
+            # load dataset
             if self.cfg.cache_validation_data and basin in self.cached_datasets.keys():
                 ds = self.cached_datasets[basin]
             else:
@@ -210,10 +211,14 @@ class BaseTester(object):
                     continue
                 if self.cfg.cache_validation_data and self.period == "validation":
                     self.cached_datasets[basin] = ds
-
+            
+            # setup data loader
             loader = DataLoader(ds, batch_size=self.cfg.batch_size, num_workers=0, collate_fn=ds.collate_fn)
-
-            y_hat, y, dates, all_losses, all_output[basin] = self._evaluate(model, loader, ds.frequencies,
+            
+            # run evaluation
+            y_hat, y, dates, all_losses, all_output[basin] = self._evaluate(model,
+                                                                            loader,
+                                                                            ds.frequencies,
                                                                             save_all_output)
 
             # log loss of this basin plus number of samples in the logger to compute epoch aggregates later
@@ -334,8 +339,7 @@ class BaseTester(object):
         # a non-existing basin
         results = dict(results)
 
-        if (self.period == "validation") and (self.cfg.log_n_figures > 0) and (experiment_logger
-                                                                               is not None) and results:
+        if (self.period == "validation") and (self.cfg.log_n_figures > 0) and (experiment_logger is not None) and results:
             self._create_and_log_figures(results, experiment_logger, epoch)
 
         # save model output to file, if requested
@@ -405,7 +409,13 @@ class BaseTester(object):
                 pickle.dump(states, fp)
             LOGGER.info(f"Stored states at {result_file}")
 
-    def _evaluate(self, model: BaseModel, loader: DataLoader, frequencies: List[str], save_all_output: bool = False):
+    def _evaluate(
+        self,
+        model: BaseModel,
+        loader: DataLoader,
+        frequencies: List[str],
+        save_all_output: bool = False
+    ):
         """Evaluate model"""
         predict_last_n = self.cfg.predict_last_n
         if isinstance(predict_last_n, int):
@@ -476,8 +486,14 @@ class BaseTester(object):
         _, all_losses = self.loss_obj(predictions, data)
         return predictions, {k: v.item() for k, v in all_losses.items()}
 
-    def _subset_targets(self, model: BaseModel, data: Dict[str, torch.Tensor], predictions: np.ndarray,
-                        predict_last_n: int, freq: str):
+    def _subset_targets(
+        self,
+        model: BaseModel,
+        data: Dict[str, torch.Tensor],
+        predictions: np.ndarray,
+        predict_last_n: int,
+        freq: str
+    ):
         raise NotImplementedError
 
     def _create_xarray_data_vars(self, y_hat: np.ndarray, y: np.ndarray):
@@ -507,8 +523,14 @@ class RegressionTester(BaseTester):
     def __init__(self, cfg: Config, run_dir: Path, period: str = "test", init_model: bool = True):
         super(RegressionTester, self).__init__(cfg, run_dir, period, init_model)
 
-    def _subset_targets(self, model: BaseModel, data: Dict[str, torch.Tensor], predictions: np.ndarray,
-                        predict_last_n: np.ndarray, freq: str):
+    def _subset_targets(
+        self,
+        model: BaseModel,
+        data: Dict[str, torch.Tensor],
+        predictions: np.ndarray,
+        predict_last_n: np.ndarray,
+        freq: str
+    ):
         y_hat_sub = predictions[f'y_hat{freq}'][:, -predict_last_n:, :]
         y_sub = data[f'y{freq}'][:, -predict_last_n:, :]
         return y_hat_sub, y_sub
