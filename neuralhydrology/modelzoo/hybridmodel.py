@@ -6,7 +6,8 @@ from neuralhydrology.modelzoo.basemodel import BaseModel
 from neuralhydrology.modelzoo.baseconceptualmodel import BaseConceptualModel
 from neuralhydrology.modelzoo.inputlayer import InputLayer
 from neuralhydrology.modelzoo.shm import SHM
-from neuralhydrology.modelzoo.linear_reservoir import LinearReservoir
+from neuralhydrology.modelzoo.linear_reservoir import LinearReservoir, LinearReservoirV, LinearReservoirQV
+from neuralhydrology.modelzoo.hanazaki_reservoir import HanazakiDynamic, HanazakiStatic
 
 
 class HybridModel(BaseModel):
@@ -63,7 +64,8 @@ class HybridModel(BaseModel):
         lstm_out = self.linear(lstm_out)
 
         # get predictions
-        pred = self.conceptual_model(x_conceptual=data['x_d_c'][:, self.cfg.warmup_period:, :], lstm_out=lstm_out)
+        pred = self.conceptual_model(x_conceptual=data['x_d_c'][:, self.cfg.warmup_period:, :],
+                                     lstm_out=lstm_out)
 
         return pred
 
@@ -85,6 +87,14 @@ class HybridModel(BaseModel):
             conceptual_model = SHM(cfg=cfg)
         elif cfg.conceptual_model.lower() == 'linear_reservoir':
             conceptual_model = LinearReservoir(cfg=cfg)
+        elif cfg.conceptual_model.lower() == 'linear_reservoir_v':
+            conceptual_model = LinearReservoirV(cfg=cfg)
+        elif cfg.conceptual_model.lower() == 'linear_reservoir_qv':
+            conceptual_model = LinearReservoirQV(cfg=cfg)
+        elif cfg.conceptual_model.lower() == 'hanazaki_static':
+            conceptual_model = HanazakiStatic(cfg=cfg)
+        elif cfg.conceptual_model.lower() == 'hanazaki_dynamic':
+            conceptual_model = HanazakiDynamic(cfg=cfg)
         else:
             raise NotImplementedError(f"{cfg.conceptual_model} not implemented or not linked in `_get_conceptual_model()`")
 
