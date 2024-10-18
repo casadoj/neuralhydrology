@@ -3,12 +3,12 @@
 The computation of catchment statistics is done using the tool `catchment_statistics` from the repository `lisflood-utilities`:
 
 	```from lisfloodutilities import catchment_statistics```
-	
+
 The computations are weighted by the pixel area (which changes with latitude) using the static map _pixarea.nc_.
 
 ## Static maps
 
-The file _attributes_static_maps.csv_ contains catchment attributes extracted from the GloFAS static maps.
+The file _glofas_static_maps.csv_ contains catchment attributes extracted from the GloFAS static maps. The statistics used for each static maps are controlled in the configuration file _attributes.yml_.
 
 ### Geomorphology
 
@@ -45,4 +45,4 @@ In both cases the attributes are the count of reservoirs/lakes in the catchment 
 
 ## Model parameters
 
-Since the model parameters are constant across the headwater cathcments, the mean, median, minimum or maximum would result in the same value.
+The file _glofas_model_paraemeters.csv_ contains the catchment mean values of each of the 14 LISFLOOD model parameters. Since the model parameters are constant across the headwater cathcments, the mean, median, minimum or maximum would result in the same value.
