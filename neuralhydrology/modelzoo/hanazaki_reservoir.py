@@ -21,6 +21,7 @@ class HanazakiDynamic(BaseConceptualModel):
 
     def __init__(self, cfg: Config):
         super(HanazakiDynamic, self).__init__(cfg=cfg)
+        self.target_variables = cfg.target_variables
 
     def forward(
         self,
@@ -56,9 +57,9 @@ class HanazakiDynamic(BaseConceptualModel):
         states, out = self._initialize_information(conceptual_inputs=x_conceptual)
 
         # initialize constants
-        zero = torch.tensor(0.0, dtype=torch.float32, device=x_conceptual.device, requires_grad=True)
-        one = torch.tensor(1.0, dtype=torch.float32, device=x_conceptual.device, requires_grad=True)
-        eps = torch.tensor(1e-8, dtype=torch.float32, device=x_conceptual.device, requires_grad=True)
+        # zero = torch.tensor(0.0, dtype=torch.float32, device=x_conceptual.device, requires_grad=False)
+        one = torch.tensor(1.0, dtype=torch.float32, device=x_conceptual.device, requires_grad=False)
+        eps = torch.tensor(1e-8, dtype=torch.float32, device=x_conceptual.device, requires_grad=False)
 
         # inflow [batch_size, seq_length-warmup_period]
         inflow = x_conceptual[:, :, 0].clone()
@@ -71,39 +72,66 @@ class HanazakiDynamic(BaseConceptualModel):
                          ).repeat(x_conceptual.shape[0])
         
         # constant parameters
-        FFc = torch.tensor(0.1, dtype=torch.float32, device=x_conceptual.device, requires_grad=False) # JCR: GloFAS default value. It should be different for each reservoir, though
         # k = 1 # max(1 - 5 * (1 - FFf) / A, 0) # JCR: how to read the catchment area (A)?
         k = torch.tensor(1, dtype=torch.float32, device=x_conceptual.device, requires_grad=False)
+        Qn = torch.nanmean(inflow[:,-1])
         
         # reservoir routine
         for j in range(x_conceptual.shape[1]):
             
             # dynamic parameters
-            FFf = parameters['alpha'][:,j]
-            FFe = FFf + (1 - FFf) * parameters['beta'][:,j]
-            FFn = FFf * parameters['gamma'][:,j]
+            FFf = parameters['Vf'][:,j]
+            FFe = 0.8 + 0.2 * FFf
+            FFc = 0.5 * FFf
             Qf = parameters['Qf'][:,j]
-            Qn = Qf * parameters['epsilon'][:,j]
+            Qc = Qn * FFc / FFf
+            
+            # inflow
+            Qin = inflow[:,j]
+            # inflow condition
+            mask_I = Qin > Qf
             
             # update storage
-            ff = ff + inflow[:,j]
-                        
-            # storage conditions
-            mask_c = ff <= FFc                # conservative zone
-            mask_n = (ff > FFc) & (ff <= FFf) # normal zone
-            mask_f = (ff > FFf) & (ff <= FFe) # flood zone
-            mask_e = ff > FFe                 # extreme zone
-            # inflow condition
-            mask_I = inflow[:,j] > Qf         # flood event
+            ff = ff + Qin
             
             # outflow
-            outflow = torch.zeros_like(ff, requires_grad=ff.requires_grad)
-            outflow = torch.where(mask_c, Qn * ff / FFf, outflow)
-            outflow = torch.where((mask_n | mask_f) & ~mask_I, FFc / FFf * Qn + ((ff - FFc) / (FFe - FFc))**2 * (Qf - FFc / FFf * Qn), outflow)
-            outflow = torch.where(mask_n & mask_I, FFc / FFf * Qn + (ff - FFc) / (FFf - FFc) * (Qf - FFc / FFf * Qn), outflow)
-            outflow = torch.where(mask_f & mask_I, Qf + k * (ff - FFf) / (FFe - FFf) * (inflow[:,j] - Qf), outflow)
-            outflow = torch.where(mask_e & ~mask_I, Qf, outflow)
-            outflow = torch.where(mask_e & mask_I, inflow[:,j], outflow)
+            outflow = torch.zeros_like(ff)
+            # conservative zone
+            outflow = torch.where(
+                ff <= FFc,
+                Qn * ff / FFf,
+                outflow
+            )
+            # normal zone and NO flood inflow
+            outflow = torch.where(
+                (ff > FFc) & (ff <= FFe) & ~mask_I,
+                Qc + ((ff - FFc) / (FFe - FFc))**2 * (Qf - Qc),
+                outflow
+            )
+            # normal zone and flood inflow
+            outflow = torch.where(
+                (ff > FFc) & (ff <= FFf) & mask_I,
+                FFc / FFf * Qn + (ff - FFc) / (FFf - FFc) * (Qf - FFc / FFf * Qn),
+                outflow
+            )
+            # flood zone and flood inflow
+            outflow = torch.where(
+                (ff > FFf) & (ff <= FFe) & mask_I,
+                Qf + k * (ff - FFf) / (FFe - FFf) * (Qin - Qf),
+                outflow
+            )
+            # emergency zone and NO flood inflow
+            outflow = torch.where(
+                (ff > FFe) & ~mask_I,
+                Qf,
+                outflow
+            )
+            # emergency zone and flood inflow
+            outflow = torch.where(
+                (ff > FFe) & mask_I,
+                Qin,
+                outflow
+            )
             # limit outflow so the final storage is between 0 and 1
             outflow = torch.max(torch.min(outflow, ff - FFc), ff - one + eps)
 
@@ -112,7 +140,15 @@ class HanazakiDynamic(BaseConceptualModel):
 
             # store storage (and outflow)
             states['ff'][:, j] = ff
-            out[:, j, 0] = ff
+            if len(self.target_variables) == 1:
+                if 'outflow' in self.target_variables[0]:
+                    out[:, j, 0] = outflow
+                elif 'storage' in self.target_variables[0]:
+                    out[:, j, 0] = ff
+            elif len(self.target_variables) == 2:
+                out[:, j, 0] = ff
+                out[:, j, 1] = outflow
+            
 
         return {'y_hat': out, 'parameters': parameters, 'internal_states': states}
 
@@ -125,11 +161,8 @@ class HanazakiDynamic(BaseConceptualModel):
     @property
     def parameter_ranges(self):
         return {
-            'alpha': [0.2, 0.99], # flood storage limit
-            'beta': [0.001, 0.999], # extreme storage limit
-            'gamma': [0.001, 0.999], # normal storage limit
-            'Qf': [0, 1], # flood outflow # JCR: it should be a factor of Q100, but I would need to find a way to read the Q100
-            'epsilon': [0.001, 0.999] # normal outflow
+            'Vf': [0.5, 0.99], # flood storage limit
+            'Qf': [0.0001, 0.5], # flood outflow # JCR: it should be a factor of Q100, but I would need to find a way to read the Q100
         }
     
     
@@ -151,6 +184,7 @@ class HanazakiStatic(BaseConceptualModel):
 
     def __init__(self, cfg: Config):
         super(HanazakiStatic, self).__init__(cfg=cfg)
+        self.target_variables = cfg.target_variables
 
     def forward(
         self,
@@ -184,9 +218,9 @@ class HanazakiStatic(BaseConceptualModel):
         #   * states: n_pars · [batch_size, seq_lenght-warmup]
         #   * out: [batch_size, seq_lenght-warmup, n_target]
         states, out = self._initialize_information(conceptual_inputs=x_conceptual)
-
+        
         # initialize constants
-        zero = torch.tensor(0.0, dtype=torch.float32, device=x_conceptual.device)
+        # zero = torch.tensor(0.0, dtype=torch.float32, device=x_conceptual.device, requires_grad=False)
         one = torch.tensor(1.0, dtype=torch.float32, device=x_conceptual.device, requires_grad=False)
         eps = torch.tensor(1e-8, dtype=torch.float32, device=x_conceptual.device, requires_grad=False)
 
@@ -200,54 +234,85 @@ class HanazakiStatic(BaseConceptualModel):
                           device=x_conceptual.device
                          ).repeat(x_conceptual.shape[0])
         
-        # static parameters
-        # FFf = torch.nanmean(parameters['alpha'])
-        # FFe = FFf + (1 - FFf) * torch.nanmean(parameters['beta'])
-        # FFn = FFf * torch.nanmean(parameters['gamma'])
-        FFc = torch.tensor(0.1, dtype=torch.float32, device=x_conceptual.device, requires_grad=False) # JCR: GloFAS default value. It should be different for each reservoir, though
+        # constant parameters
+        # FFf = torch.nanmedian(parameters['Vf'])
+        # FFe = 0.8 + 0.2 * FFf
+        # FFc = 0.5 * FFf
+        # Qf = torch.nanmedian(parameters['Qf'])
+        
         # k = 1 # max(1 - 5 * (1 - FFf) / A, 0) # JCR: how to read the catchment area (A)?
         k = torch.tensor(1, dtype=torch.float32, device=x_conceptual.device, requires_grad=False)
-        # Qf = torch.nanmean(parameters['Qf'])
-        # Qn = Qf * torch.nanmean(parameters['epsilon'])
+        Qn = torch.nanmean(inflow[:,-1])
         
         # reservoir routine
         for j in range(x_conceptual.shape[1]):
             
             # dynamic parameters
-            FFf = torch.nanmean(parameters['alpha'][:,j])
-            FFe = FFf + (1 - FFf) * torch.nanmean(parameters['beta'][:,j])
-            FFn = FFf * torch.nanmean(parameters['gamma'][:,j])
-            Qf = torch.nanmean(parameters['Qf'][:,j])
-            Qn = Qf * torch.nanmean(parameters['epsilon'][:,j])
+            FFf = torch.mean(parameters['Vf'][:,j])
+            FFe = 0.8 + 0.2 * FFf
+            FFc = 0.5 * FFf
+            Qf = torch.mean(parameters['Qf'][:,j])
+            Qc = Qn * FFc / FFf
+            
+            # inflow
+            Qin = inflow[:,j]
+            # inflow condition
+            mask_I = Qin > Qf
             
             # update storage
-            ff = ff + inflow[:,j]
-            
-            # storage conditions
-            mask_c = ff <= FFc                # conservative zone
-            mask_n = (ff > FFc) & (ff <= FFf) # normal zone
-            mask_f = (ff > FFf) & (ff <= FFe) # flood zone
-            mask_e = ff > FFe                 # extreme zone
-            # inflow condition
-            mask_I = inflow[:,j] > Qf         # flood event
+            ff = ff + Qin
             
             # outflow
-            outflow = torch.zeros_like(ff, requires_grad=ff.requires_grad)
-            outflow = torch.where(mask_c, Qn * ff / FFf, outflow)
-            outflow = torch.where((mask_n | mask_f) & ~mask_I, FFc / FFf * Qn + ((ff - FFc) / (FFe - FFc))**2 * (Qf - FFc / FFf * Qn), outflow)
-            outflow = torch.where(mask_n & mask_I, FFc / FFf * Qn + (ff - FFc) / (FFf - FFc) * (Qf - FFc / FFf * Qn), outflow)
-            outflow = torch.where(mask_f & mask_I, Qf + k * (ff - FFf) / (FFe - FFf) * (inflow[:,j] - Qf), outflow)
-            outflow = torch.where(mask_e & ~mask_I, Qf, outflow)
-            outflow = torch.where(mask_e & mask_I, inflow[:,j], outflow)
+            outflow = torch.zeros_like(ff)
+            # conservative zone
+            outflow = torch.where(
+                ff <= FFc,
+                Qn * ff / FFf,
+                outflow
+            )
+            # normal zone and NO flood inflow
+            outflow = torch.where(
+                (ff > FFc) & (ff <= FFe) & ~mask_I,
+                Qc + ((ff - FFc) / (FFe - FFc))**2 * (Qf - Qc),
+                outflow
+            )
+            # normal zone and flood inflow
+            outflow = torch.where(
+                (ff > FFc) & (ff <= FFf) & mask_I,
+                FFc / FFf * Qn + (ff - FFc) / (FFf - FFc) * (Qf - FFc / FFf * Qn),
+                outflow
+            )
+            # flood zone and flood inflow
+            outflow = torch.where(
+                (ff > FFf) & (ff <= FFe) & mask_I,
+                Qf + k * (ff - FFf) / (FFe - FFf) * (Qin - Qf),
+                outflow
+            )
+            # emergency zone and NO flood inflow
+            outflow = torch.where(
+                (ff > FFe) & ~mask_I,
+                Qf,
+                outflow
+            )
+            # emergency zone and flood inflow
+            outflow = torch.where(
+                (ff > FFe) & mask_I,
+                Qin,
+                outflow
+            )
             # limit outflow so the final storage is between 0 and 1
             outflow = torch.max(torch.min(outflow, ff - FFc), ff - one + eps)
 
-            # update storage
-            ff = ff - outflow
-
             # store storage (and outflow)
             states['ff'][:, j] = ff
-            out[:, j, 0] = ff
+            if len(self.target_variables) == 1:
+                if 'outflow' in self.target_variables[0]:
+                    out[:, j, 0] = outflow
+                elif 'storage' in self.target_variables[0]:
+                    out[:, j, 0] = ff
+            elif len(self.target_variables) == 2:
+                out[:, j, 0] = ff
+                out[:, j, 1] = outflow
 
         return {'y_hat': out, 'parameters': parameters, 'internal_states': states}
 
@@ -260,9 +325,6 @@ class HanazakiStatic(BaseConceptualModel):
     @property
     def parameter_ranges(self):
         return {
-            'alpha': [0.2, 0.99], # flood storage limit
-            'beta': [0.001, 0.999], # extreme storage limit
-            'gamma': [0.001, 0.999], # normal storage limit
-            'Qf': [0, 1], # flood outflow # JCR: it should be a factor of Q100, but I would need to find a way to read the Q100
-            'epsilon': [0.001, 0.999] # normal outflow
+            'Vf': [0.5, 0.99], # flood storage limit
+            'Qf': [0.0001, 0.5], # flood outflow # JCR: it should be a factor of Q100, but I would need to find a way to read the Q100
         }
