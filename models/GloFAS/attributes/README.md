@@ -2,7 +2,9 @@
 
 The computation of catchment statistics is done using the tool `catchment_statistics` from the repository `lisflood-utilities`:
 
-	```from lisfloodutilities import catchment_statistics```
+```Python
+from lisfloodutilities import catchment_statistics
+```
 
 The computations are weighted by the pixel area (which changes with latitude) using the static map _pixarea.nc_.
 
