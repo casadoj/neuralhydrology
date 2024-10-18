@@ -144,7 +144,7 @@ def evaluate(cfg, model, dataloader):
     inflow = []
     # obs = []
     parnames = list(model.conceptual_model.parameter_ranges)
-    with torch.no_grad():
+    with torch.inference_mode():
         for data in dataloader:
 
             # run the LSTM
