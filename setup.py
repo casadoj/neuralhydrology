@@ -30,8 +30,10 @@ setup(name='neuralhydrology',
       long_description_content_type='text/markdown',
       entry_points={
           'console_scripts': [
-              'nh-schedule-runs=neuralhydrology.nh_run_scheduler:_main', 'nh-run=neuralhydrology.nh_run:_main',
-              'nh-results-ensemble=neuralhydrology.utils.nh_results_ensemble:_main'
+              'nh-schedule-runs=neuralhydrology.nh_run_scheduler:_main',
+              'nh-run=neuralhydrology.nh_run:_main',
+              'nh-results-ensemble=neuralhydrology.utils.nh_results_ensemble:_main',
+              'nh-eval=neuralhydrology.nh_evaluate:_main'
           ]
       },
       python_requires='>=3.8',
